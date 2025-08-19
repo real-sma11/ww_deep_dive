@@ -2,7 +2,7 @@
 
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
-import { Suspense, useState, useCallback, useEffect, useRef } from "react"
+import { Suspense, useState, useCallback, useRef } from "react"
 import { NetworkScene } from "../components/NetworkScene"
 import { DescriptionPanel } from "../components/DescriptionPanel"
 import { BreadcrumbNavigation } from "../components/BreadcrumbNavigation"
@@ -12,74 +12,54 @@ import { useNodeOperations } from "../hooks/useNodeOperations"
 import { initialNetworkState, createInitialNetworkState } from "../data/initialNetworkState"
 import { repositionNodesWithCollisionDetection } from "../utils/collisionDetection"
 import type { NetworkState, Node3D, Position3D } from "../types/node"
-import { RotateCcw, Info, Minimize2, Maximize2 } from 'lucide-react'
+import { RotateCcw, Info, Minimize2, Maximize2 } from "lucide-react"
 import * as THREE from "three"
 
-// Cache structure for storing different layout states
 interface LayoutCache {
   [key: string]: {
-    nodes: Node3D
+    nodes: Node3D[]
     centerNode: Node3D
     timestamp: number
   }
 }
 
-export default function NodeNetworkApp() {
+const NodeNetworkApp = () => {
   const [networkState, setNetworkState] = useState<NetworkState>(initialNetworkState)
   const [isDragging, setIsDragging] = useState(false)
-  // Track visual position of focused node in details mode
-  const [focusedNodeVisualPosition, setFocusedNodeVisualPosition] = useState<Position3D | null>(null)
-  // Track which node's details to show (separate from navigation focus)
   const [detailsNodeId, setDetailsNodeId] = useState<string>("center")
-  // Protocol filter state
+  const [infoNodeId, setInfoNodeId] = useState<string | null>(null)
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>([])
-  // Income filter state
   const [selectedIncome, setSelectedIncome] = useState<string[]>([])
-  // Search filter state
   const [searchTerm, setSearchTerm] = useState<string>("")
   const [isFilterActive, setIsFilterActive] = useState(false)
-  // Track if we need to reposition nodes after expansion/collapse
-  const [needsRepositioning, setNeedsRepositioning] = useState(false)
-  // Collapsed states for both panels - START WITH FILTER COLLAPSED
   const [isControlsCollapsed, setIsControlsCollapsed] = useState(false)
-  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true) // Changed to true to start collapsed
-  // Add after existing state declarations
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true)
   const [isAllExpanded, setIsAllExpanded] = useState(false)
-  // Pan controls state
-  const [isPanning, setIsPanning] = useState(false)
-  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null)
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
-  // Change from isPanMode to isRotateMode
   const [isRotateMode, setIsRotateMode] = useState(false)
-  // Add Info mode state
   const [isInfoMode, setIsInfoMode] = useState(false)
-  const [infoNodeId, setInfoNodeId] = useState<string | null>(null)
-  // Track empty space interactions
-  const [isEmptySpaceInteracting, setIsEmptySpaceInteracting] = useState(false)
 
-  // Layout cache for storing different expansion states
   const layoutCacheRef = useRef<LayoutCache>({})
-  const maxCacheSize = 10 // Limit cache size to prevent memory issues
+  const maxCacheSize = 10
   const orbitControlsRef = useRef<any>(null)
+  const isDraggingAnyNodeRef = useRef(false)
 
   const { findNodeById, buildBreadcrumbPath } = useNodeOperations()
 
-  // Single spacing variable for consistent button spacing
-  const BUTTON_SPACING = 8 // 8px gap between buttons (equivalent to gap-2 in Tailwind)
+  const BUTTON_SPACING = 8
 
-  // Generate cache key based on current state
-  const generateCacheKey = useCallback((expanded: boolean, protocols: string[], income: string[], search: string): string => {
-    const expandedKey = expanded ? "expanded" : "collapsed"
-    const protocolsKey = protocols.length > 0 ? `protocols-${protocols.sort().join("-")}` : "no-protocols"
-    const incomeKey = income.length > 0 ? `income-${income.sort().join("-")}` : "no-income"
-    const searchKey = search.trim() ? `search-${search.trim().toLowerCase().replace(/\s+/g, "-")}` : "no-search"
-    return `${expandedKey}-${protocolsKey}-${incomeKey}-${searchKey}`
-  }, [])
+  const generateCacheKey = useCallback(
+    (expanded: boolean, protocols: string[], income: string[], search: string): string => {
+      const expandedKey = expanded ? "expanded" : "collapsed"
+      const protocolsKey = protocols.length > 0 ? `protocols-${protocols.sort().join("-")}` : "no-protocols"
+      const incomeKey = income.length > 0 ? `income-${income.sort().join("-")}` : "no-income"
+      const searchKey = search.trim() ? `search-${search.trim().toLowerCase().replace(/\s+/g, "-")}` : "no-search"
+      return `${expandedKey}-${protocolsKey}-${incomeKey}-${searchKey}`
+    },
+    [],
+  )
 
-  // Store layout in cache
   const cacheLayout = useCallback(
     (key: string, nodes: Node3D[], centerNode: Node3D) => {
-      // Deep clone to avoid reference issues
       const cachedLayout = {
         nodes: structuredClone(nodes),
         centerNode: structuredClone(centerNode),
@@ -88,28 +68,21 @@ export default function NodeNetworkApp() {
 
       layoutCacheRef.current[key] = cachedLayout
 
-      // Limit cache size - remove oldest entries
       const cacheEntries = Object.entries(layoutCacheRef.current)
       if (cacheEntries.length > maxCacheSize) {
-        // Sort by timestamp and remove oldest
         cacheEntries.sort((a, b) => a[1].timestamp - b[1].timestamp)
         const entriesToRemove = cacheEntries.slice(0, cacheEntries.length - maxCacheSize)
         entriesToRemove.forEach(([keyToRemove]) => {
           delete layoutCacheRef.current[keyToRemove]
         })
       }
-
-      console.log(`Cached layout: ${key}`, Object.keys(layoutCacheRef.current))
     },
     [maxCacheSize],
   )
 
-  // Retrieve layout from cache
   const getCachedLayout = useCallback((key: string): { nodes: Node3D[]; centerNode: Node3D } | null => {
     const cached = layoutCacheRef.current[key]
     if (cached) {
-      console.log(`Retrieved cached layout: ${key}`)
-      // Deep clone to avoid reference issues
       return {
         nodes: structuredClone(cached.nodes),
         centerNode: structuredClone(cached.centerNode),
@@ -118,54 +91,22 @@ export default function NodeNetworkApp() {
     return null
   }, [])
 
-  // Clear cache (useful when nodes are manually moved)
   const clearCache = useCallback(() => {
     layoutCacheRef.current = {}
-    console.log("Layout cache cleared")
   }, [])
 
-  // Effect to reposition nodes when needed
-  useEffect(() => {
-    if (needsRepositioning && isFilterActive) {
-      setNetworkState((prev) => {
-        const clonedNodes = structuredClone(prev.nodes)
-        const clonedCenter = structuredClone(prev.centerNode)
-
-        // Only reposition if filter is active
-        repositionNodesWithCollisionDetection(clonedNodes, clonedCenter)
-
-        // Cache the repositioned layout
-        const cacheKey = generateCacheKey(isAllExpanded, selectedProtocols, selectedIncome, searchTerm)
-        cacheLayout(cacheKey, clonedNodes, clonedCenter)
-
-        return {
-          ...prev,
-          centerNode: clonedCenter,
-          nodes: clonedNodes,
-        }
-      })
-      setNeedsRepositioning(false)
-    }
-  }, [needsRepositioning, isFilterActive, cacheLayout, generateCacheKey, isAllExpanded, selectedProtocols, selectedIncome, searchTerm])
-
-  // Function to expand all nodes recursively and reposition them
   const expandAllNodes = useCallback(
     (nodes: Node3D[], centerNode: Node3D): { nodes: Node3D[]; centerNode: Node3D } => {
-      // Check cache first
       const cacheKey = generateCacheKey(true, selectedProtocols, selectedIncome, searchTerm)
       const cachedLayout = getCachedLayout(cacheKey)
 
       if (cachedLayout) {
-        console.log("Using cached expanded layout")
         return cachedLayout
       }
 
-      console.log("Computing new expanded layout")
-      // Deep clone to avoid mutations
       const clonedNodes = structuredClone(nodes)
       const clonedCenter = structuredClone(centerNode)
 
-      // Recursively expand all nodes
       function expandRecursively(nodeList: Node3D[]) {
         nodeList.forEach((node) => {
           node.expanded = true
@@ -178,10 +119,10 @@ export default function NodeNetworkApp() {
       clonedCenter.expanded = true
       expandRecursively(clonedNodes)
 
-      // Reposition all nodes to avoid collisions
+      const originalCenterPosition = { ...clonedCenter.position }
       repositionNodesWithCollisionDetection(clonedNodes, clonedCenter)
+      clonedCenter.position = originalCenterPosition
 
-      // Cache the result
       cacheLayout(cacheKey, clonedNodes, clonedCenter)
 
       return { nodes: clonedNodes, centerNode: clonedCenter }
@@ -189,23 +130,18 @@ export default function NodeNetworkApp() {
     [generateCacheKey, getCachedLayout, cacheLayout, selectedProtocols, selectedIncome, searchTerm],
   )
 
-  // Function to collapse all nodes
   const collapseAllNodes = useCallback(
     (nodes: Node3D[], centerNode: Node3D): { nodes: Node3D[]; centerNode: Node3D } => {
-      // Check cache first
       const cacheKey = generateCacheKey(false, selectedProtocols, selectedIncome, searchTerm)
       const cachedLayout = getCachedLayout(cacheKey)
 
       if (cachedLayout) {
-        console.log("Using cached collapsed layout")
         return cachedLayout
       }
 
-      console.log("Computing new collapsed layout")
       const clonedNodes = structuredClone(nodes)
       const clonedCenter = structuredClone(centerNode)
 
-      // Recursively collapse all nodes except center
       function collapseRecursively(nodeList: Node3D[]) {
         nodeList.forEach((node) => {
           node.expanded = false
@@ -215,10 +151,10 @@ export default function NodeNetworkApp() {
         })
       }
 
-      clonedCenter.expanded = true // Keep center expanded
+      clonedCenter.expanded = true
       collapseRecursively(clonedNodes)
 
-      // Cache the result
+      clonedCenter.position = { x: 0, y: 0, z: 0 }
       cacheLayout(cacheKey, clonedNodes, clonedCenter)
 
       return { nodes: clonedNodes, centerNode: clonedCenter }
@@ -226,10 +162,8 @@ export default function NodeNetworkApp() {
     [generateCacheKey, getCachedLayout, cacheLayout, selectedProtocols, selectedIncome, searchTerm],
   )
 
-  // Add after the expandAllNodes function
   const handleExpandAll = useCallback(() => {
     if (!isAllExpanded) {
-      // Expand all nodes (with caching)
       const { nodes: expandedNodes, centerNode: expandedCenter } = expandAllNodes(
         networkState.nodes,
         networkState.centerNode,
@@ -241,7 +175,6 @@ export default function NodeNetworkApp() {
       }))
       setIsAllExpanded(true)
     } else {
-      // Close all - reset to initial collapsed state (with caching)
       const { nodes: collapsedNodes, centerNode: collapsedCenter } = collapseAllNodes(
         networkState.nodes,
         networkState.centerNode,
@@ -256,10 +189,8 @@ export default function NodeNetworkApp() {
   }, [isAllExpanded, expandAllNodes, collapseAllNodes, networkState.nodes, networkState.centerNode])
 
   const handleResetLayout = useCallback(() => {
-    // Get a fresh, pristine copy of the network state
     const freshState = createInitialNetworkState()
 
-    // Create a map of the current expansion states to preserve user interaction
     const expansionMap = new Map<string, boolean>()
     const collectExpansionStates = (node: Node3D) => {
       expansionMap.set(node.id, node.expanded)
@@ -270,7 +201,6 @@ export default function NodeNetworkApp() {
     collectExpansionStates(networkState.centerNode)
     networkState.nodes.forEach(collectExpansionStates)
 
-    // Apply the saved expansion states to the fresh layout
     const applyExpansionStates = (node: Node3D) => {
       if (expansionMap.has(node.id)) {
         node.expanded = expansionMap.get(node.id) ?? node.expanded
@@ -282,128 +212,61 @@ export default function NodeNetworkApp() {
     applyExpansionStates(freshState.centerNode)
     freshState.nodes.forEach(applyExpansionStates)
 
-    // Reposition the nodes based on the applied expansion states
     repositionNodesWithCollisionDetection(freshState.nodes, freshState.centerNode)
 
-    // Set the new, clean state
     setNetworkState(freshState)
-
-    // Clear the layout cache as all manual positions are gone
     clearCache()
-
-    // Reset pan offset
-    setPanOffset({ x: 0, y: 0 })
-
-    console.log("Layout has been reset to default positions.")
   }, [networkState, clearCache])
 
-  // Pan control handlers - Updated logic
-  const handlePanStart = useCallback(
-    (clientX: number, clientY: number) => {
-      // Only start panning if not already dragging a node
-      if (!isDragging) {
-        console.log("Starting pan")
-        setIsPanning(true)
-        setPanStart({ x: clientX, y: clientY })
-      }
-    },
-    [isDragging],
-  )
-
-  const handlePanMove = useCallback(
-    (clientX: number, clientY: number) => {
-      if (isPanning && panStart) {
-        const deltaX = clientX - panStart.x
-        const deltaY = clientY - panStart.y
-
-        // Convert screen space movement to world space (X,Y only)
-        const sensitivity = 0.01
-        const newOffset = {
-          x: panOffset.x - deltaX * sensitivity,
-          y: panOffset.y + deltaY * sensitivity, // Invert Y for natural feel
-        }
-
-        setPanOffset(newOffset)
-        setPanStart({ x: clientX, y: clientY })
-      }
-    },
-    [isPanning, panStart, panOffset],
-  )
-
-  const handlePanEnd = useCallback(() => {
-    if (isPanning) {
-      console.log("Ending pan")
-      setIsPanning(false)
-      setPanStart(null)
-    }
-  }, [])
-
-  // Get the info node for info mode - MOVE THIS UP BEFORE getButtonRowPosition
-  const infoNode = infoNodeId ? findNodeById(infoNodeId, networkState.nodes, networkState.centerNode) : null
-
-  // Fixed button positioning calculation using consistent spacing
   const getButtonRowPosition = () => {
-    // In info/details modes, both panels are always collapsed (forced to icon state)
-    const inSpecialMode = networkState.isZoomedIn || infoNode
-    
+    const inSpecialMode = networkState.isZoomedIn || infoNodeId
+
     if (inSpecialMode) {
-      // Both panels are collapsed in info/details modes, so we have 2 icons (36px each)
       const iconWidth = 36
-      const startPosition = 16 // left-4 = 16px
-      
-      // Calculate positions: startPos + (iconWidth + spacing) * 2 for first button after icons
+      const startPosition = 16
       const afterIcons = startPosition + (iconWidth + BUTTON_SPACING) * 2
-      
+
       return {
         expandAll: `left-[${afterIcons}px]`,
         reset: `left-[${afterIcons + iconWidth + BUTTON_SPACING}px]`,
         rotate: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2}px]`,
-        info: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING}px]`, // 60px for rotate button width
-        infoButtonEnd: afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING + 60, // Info button left + width
+        info: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING}px]`,
+        infoButtonEnd: afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING + 60,
       }
     } else {
-      // Normal overview mode - calculate based on actual panel states
       let iconSlots = 0
       if (isControlsCollapsed) iconSlots++
       if (isFilterCollapsed) iconSlots++
-      
+
       const iconWidth = 36
-      const startPosition = 16 // left-4 = 16px
+      const startPosition = 16
       const afterIcons = iconSlots > 0 ? startPosition + (iconWidth + BUTTON_SPACING) * iconSlots : startPosition
-      
+
       return {
         expandAll: `left-[${afterIcons}px]`,
         reset: `left-[${afterIcons + iconWidth + BUTTON_SPACING}px]`,
         rotate: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2}px]`,
-        info: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING}px]`, // 60px for rotate button width
-        infoButtonEnd: afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING + 60, // Info button left + width
+        info: `left-[${afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING}px]`,
+        infoButtonEnd: afterIcons + (iconWidth + BUTTON_SPACING) * 2 + 60 + BUTTON_SPACING + 60,
       }
     }
   }
 
   const buttonPositions = getButtonRowPosition()
 
-  // Calculate title position - centered or minimum spacing from info button
   const getTitlePosition = () => {
-    const titleWidth = 320 // Approximate width for "WW METROPOLIS" at 36px font size
+    const titleWidth = 320
     const minSpacingFromInfo = buttonPositions.infoButtonEnd + BUTTON_SPACING
-    
-    // Calculate available width - full viewport or 60% when details/info panel is active
-    const availableWidthPercent = (networkState.isZoomedIn || infoNode) ? 60 : 100
+    const availableWidthPercent = networkState.isZoomedIn || infoNodeId ? 60 : 100
     const centeredPosition = `calc(${availableWidthPercent}vw / 2 - ${titleWidth / 2}px)`
-    
-    // Check if centered position would be too close to info button
-    // We'll use CSS max() to ensure it's never closer than minimum spacing
     return `max(${minSpacingFromInfo}px, ${centeredPosition})`
   }
 
-  // Handle filter activation/deactivation (now called automatically by ProtocolFilter)
   const handleToggleFilter = useCallback(() => {
     const newFilterActive = !isFilterActive
     setIsFilterActive(newFilterActive)
 
     if (newFilterActive) {
-      // Only expand all nodes if not already expanded
       if (!isAllExpanded) {
         const { nodes: expandedNodes, centerNode: expandedCenter } = expandAllNodes(
           networkState.nodes,
@@ -414,50 +277,44 @@ export default function NodeNetworkApp() {
           centerNode: expandedCenter,
           nodes: expandedNodes,
         }))
-        // Set expand all state to trigger zoom out and update button text
         setIsAllExpanded(true)
-        console.log("Filter activated - expanding all nodes")
-      } else {
-        console.log("Filter activated - nodes already expanded, skipping expansion")
       }
     }
-    // Note: When deactivating filter, don't automatically collapse nodes
-    // Let the user control that with the Expand All/Close All button
   }, [isFilterActive, isAllExpanded, expandAllNodes, networkState.nodes, networkState.centerNode])
 
   const handleNodeClick = useCallback(
     (clickedNode: Node3D) => {
-      // Handle Info mode
       if (isInfoMode) {
         setInfoNodeId(clickedNode.id)
-        // Camera centering will be handled by useEffect in NetworkScene
+        // Also handle the expand/collapse functionality in info mode
+        if (clickedNode.id === "center") {
+          setNetworkState((prev) => ({
+            ...prev,
+            centerNode: { ...prev.centerNode, expanded: !prev.centerNode.expanded },
+          }))
+        } else {
+          setNetworkState((prev) => {
+            const newState = structuredClone(prev)
+            const targetNode = findNodeById(clickedNode.id, newState.nodes, newState.centerNode)
+            if (targetNode) {
+              targetNode.expanded = !targetNode.expanded
+            }
+            return newState
+          })
+        }
         return
       }
 
-      // Update details panel if in details mode
+      // In details mode, also update the details node
       if (networkState.isZoomedIn) {
         setDetailsNodeId(clickedNode.id)
       }
 
-      // Always allow expand/collapse functionality
       if (clickedNode.id === "center") {
-        setNetworkState((prev) => {
-          const newState = {
-            ...prev,
-            centerNode: { ...prev.centerNode, expanded: !prev.centerNode.expanded },
-          }
-
-          // Update cache with new expansion state instead of clearing
-          const currentCacheKey = generateCacheKey(isAllExpanded, selectedProtocols, selectedIncome, searchTerm)
-          cacheLayout(currentCacheKey, newState.nodes, newState.centerNode)
-
-          return newState
-        })
-
-        // Trigger repositioning if filter is active
-        if (isFilterActive) {
-          setNeedsRepositioning(true)
-        }
+        setNetworkState((prev) => ({
+          ...prev,
+          centerNode: { ...prev.centerNode, expanded: !prev.centerNode.expanded },
+        }))
         return
       }
 
@@ -467,39 +324,74 @@ export default function NodeNetworkApp() {
         if (targetNode) {
           targetNode.expanded = !targetNode.expanded
         }
-
-        // Update cache with new expansion state instead of clearing
-        const currentCacheKey = generateCacheKey(isAllExpanded, selectedProtocols, selectedIncome, searchTerm)
-        cacheLayout(currentCacheKey, newState.nodes, newState.centerNode)
-
         return newState
       })
-
-      // Trigger repositioning if filter is active
-      if (isFilterActive) {
-        setNeedsRepositioning(true)
-      }
     },
-    [
-      findNodeById,
-      networkState.isZoomedIn,
-      isFilterActive,
-      generateCacheKey,
-      isAllExpanded,
-      selectedProtocols,
-      selectedIncome,
-      searchTerm,
-      cacheLayout,
-      isInfoMode,
-    ],
+    [findNodeById, isInfoMode, networkState.isZoomedIn],
   )
+
+  const handleNodeDoubleClick = useCallback(
+    (node: Node3D) => {
+      // If we're already in details mode and double-clicking the same focused node, just recenter
+      if (networkState.isZoomedIn && node.id === networkState.focusedNodeId) {
+        setNetworkState((prev) => ({
+          ...prev,
+          focusedNodeId: node.id + "_temp",
+        }))
+
+        setTimeout(() => {
+          setNetworkState((prev) => ({
+            ...prev,
+            focusedNodeId: node.id,
+          }))
+        }, 0)
+
+        return
+      }
+
+      // Close info mode if it's open
+      if (infoNodeId) {
+        setInfoNodeId(null)
+        setIsInfoMode(false)
+      }
+
+      // Enter details mode - zoom in on the double-clicked node
+      setNetworkState((prev) => ({
+        ...prev,
+        focusedNodeId: node.id,
+        isZoomedIn: true,
+        breadcrumbs: buildBreadcrumbPath(node.id, prev.nodes, prev.centerNode),
+      }))
+
+      setDetailsNodeId(node.id)
+    },
+    [buildBreadcrumbPath, infoNodeId, networkState.isZoomedIn, networkState.focusedNodeId],
+  )
+
+  const handleBreadcrumbClick = useCallback((targetId: string, index: number) => {
+    setNetworkState((prev) => ({
+      ...prev,
+      focusedNodeId: targetId,
+      isZoomedIn: true,
+      breadcrumbs: prev.breadcrumbs.slice(0, index + 1),
+    }))
+    setDetailsNodeId(targetId)
+  }, [])
+
+  const handleOverviewClick = useCallback(() => {
+    setNetworkState((prev) => ({ ...prev, isZoomedIn: false, focusedNodeId: "center" }))
+    setDetailsNodeId("center")
+  }, [])
+
+  const handleCloseInfo = useCallback(() => {
+    setInfoNodeId(null)
+    setIsInfoMode(false)
+  }, [])
 
   const handleNodeDrag = useCallback(
     (draggedNodeId: string, newPosition: Position3D) => {
-      // If dragging focused node in details mode, only update visual position
-      if (networkState.isZoomedIn && draggedNodeId === networkState.focusedNodeId) {
-        setFocusedNodeVisualPosition(newPosition)
-        return
+      if (!isDraggingAnyNodeRef.current) {
+        isDraggingAnyNodeRef.current = true
       }
 
       setNetworkState((prev) => {
@@ -561,82 +453,13 @@ export default function NodeNetworkApp() {
           applyPositionWithRelatives(nodeToDrag, newPosition, relativePositions)
         }
 
-        // Update cache with new positions instead of clearing it
-        const currentCacheKey = generateCacheKey(isAllExpanded, selectedProtocols, selectedIncome, searchTerm)
-        cacheLayout(currentCacheKey, newState.nodes, newState.centerNode)
-        console.log(`Updated cache with manual positioning: ${currentCacheKey}`)
-
         return newState
       })
     },
-    [findNodeById, networkState, generateCacheKey, isAllExpanded, selectedProtocols, selectedIncome, searchTerm, cacheLayout],
+    [findNodeById],
   )
 
-  const handleNodeDoubleClick = useCallback(
-    (node: Node3D) => {
-      // In info mode, double-click should not change to details mode
-      if (isInfoMode) {
-        return
-      }
-
-      // Update details panel if in details mode
-      if (networkState.isZoomedIn) {
-        setDetailsNodeId(node.id)
-      }
-
-      // Clear visual position when switching focus
-      setFocusedNodeVisualPosition(null)
-      setNetworkState((prev) => ({
-        ...prev,
-        focusedNodeId: node.id,
-        isZoomedIn: true,
-        breadcrumbs: buildBreadcrumbPath(node.id, prev.nodes, prev.centerNode),
-      }))
-
-      // Set details to show the double-clicked node
-      setDetailsNodeId(node.id)
-      
-      // Center camera on the selected node (one-time, not locked)
-      // This will be handled by the useEffect in NetworkScene
-    },
-    [buildBreadcrumbPath, networkState.isZoomedIn, isInfoMode],
-  )
-
-  const handleBreadcrumbClick = useCallback((targetId: string, index: number) => {
-    // Clear visual position when navigating
-    setFocusedNodeVisualPosition(null)
-    setNetworkState((prev) => ({
-      ...prev,
-      focusedNodeId: targetId,
-      isZoomedIn: true,
-      breadcrumbs: prev.breadcrumbs.slice(0, index + 1),
-    }))
-    // Update details to show the breadcrumb node
-    setDetailsNodeId(targetId)
-  }, [])
-
-  const handleOverviewClick = useCallback(() => {
-    // Clear visual position when returning to overview
-    setFocusedNodeVisualPosition(null)
-    setNetworkState((prev) => ({ ...prev, isZoomedIn: false, focusedNodeId: "center" }))
-    // Reset details to center
-    setDetailsNodeId("center")
-  }, [])
-
-  const handleCloseInfo = useCallback(() => {
-    setInfoNodeId(null)
-    setIsInfoMode(false)
-  }, [])
-
-  const handleEmptySpaceInteraction = useCallback((isInteracting: boolean) => {
-    setIsEmptySpaceInteracting(isInteracting)
-  }, [])
-
-  const focusedNode = networkState.isZoomedIn
-    ? findNodeById(networkState.focusedNodeId, networkState.nodes, networkState.centerNode)
-    : null
-
-  // Get the node whose details should be shown (may be different from focused node)
+  const infoNode = infoNodeId ? findNodeById(infoNodeId, networkState.nodes, networkState.centerNode) : null
   const detailsNode = networkState.isZoomedIn
     ? findNodeById(detailsNodeId, networkState.nodes, networkState.centerNode)
     : null
@@ -652,35 +475,37 @@ export default function NodeNetworkApp() {
       />
       <div className="flex h-full">
         <div className={`${networkState.isZoomedIn || infoNode ? "w-3/5" : "w-full"} relative`}>
-          
           <Canvas camera={{ position: [8, 8, 8], fov: 60 }} gl={{ alpha: true, antialias: true }}>
             <Suspense fallback={null}>
               <NetworkScene
                 networkState={networkState}
-                focusedNodeVisualPosition={focusedNodeVisualPosition}
                 onNodeClick={handleNodeClick}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onNodeDrag={handleNodeDrag}
-                onDragStart={() => setIsDragging(true)}
-                onDragEnd={() => setIsDragging(false)}
+                onDragStart={() => {
+                  setIsDragging(true)
+                  isDraggingAnyNodeRef.current = true
+                }}
+                onDragEnd={() => {
+                  setIsDragging(false)
+                  setTimeout(() => {
+                    isDraggingAnyNodeRef.current = false
+                  }, 100)
+                }}
                 findNodeById={findNodeById}
                 isAllExpanded={isAllExpanded}
                 selectedProtocols={selectedProtocols}
                 selectedIncome={selectedIncome}
                 searchTerm={searchTerm}
-                panOffset={panOffset}
-                onPanStart={handlePanStart}
-                onPanMove={handlePanMove}
-                onPanEnd={handlePanEnd}
-                isPanning={isPanning}
                 infoNodeId={infoNodeId}
                 detailsNodeId={networkState.isZoomedIn ? detailsNodeId : null}
-                onEmptySpaceInteraction={handleEmptySpaceInteraction}
+                controlsInteracting={false}
+                isRotateMode={isRotateMode}
               />
             </Suspense>
             <OrbitControls
               ref={orbitControlsRef}
-              enabled={!isDragging || isEmptySpaceInteracting} // Enable when empty space interaction is active
+              enabled={!isDragging}
               target={[0, 0, 0]}
               enablePan={true}
               enableRotate={isRotateMode}
@@ -693,114 +518,91 @@ export default function NodeNetworkApp() {
               makeDefault
             />
           </Canvas>
-          
-          {/* Always show all buttons */}
-          <>
-            {/* Controls Icon/Panel - Force collapsed in info/details modes */}
-            <InstructionsPanel
-              isCollapsed={networkState.isZoomedIn || infoNode ? true : isControlsCollapsed}
-              onToggleCollapsed={networkState.isZoomedIn || infoNode ? () => {} : setIsControlsCollapsed}
-              isFilterCollapsed={networkState.isZoomedIn || infoNode ? true : isFilterCollapsed}
-            />
 
-            {/* Filter Icon/Panel - Force collapsed in info/details modes */}
-            <ProtocolFilter
-              selectedProtocols={selectedProtocols}
-              onProtocolsChange={setSelectedProtocols}
-              selectedIncome={selectedIncome}
-              onIncomeChange={setSelectedIncome}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              isActive={isFilterActive}
-              onToggleFilter={handleToggleFilter}
-              isCollapsed={networkState.isZoomedIn || infoNode ? true : isFilterCollapsed}
-              onToggleCollapsed={networkState.isZoomedIn || infoNode ? () => {} : setIsFilterCollapsed}
-              isControlsCollapsed={networkState.isZoomedIn || infoNode ? true : isControlsCollapsed}
-              style={{ top: !isControlsCollapsed ? '356px' : '81px' }}
-            />
+          <InstructionsPanel
+            isCollapsed={networkState.isZoomedIn || infoNode ? true : isControlsCollapsed}
+            onToggleCollapsed={networkState.isZoomedIn || infoNode ? () => {} : setIsControlsCollapsed}
+            isFilterCollapsed={networkState.isZoomedIn || infoNode ? true : isFilterCollapsed}
+          />
 
-            {/* Expand All Button - Icon only */}
-            <button
-              onClick={handleExpandAll}
-              className={`absolute top-4 ${buttonPositions.expandAll} p-2 bg-amber-500/20 border border-amber-500/50 text-amber-300 rounded hover:bg-amber-500/30 transition-all duration-200 font-medium text-xs flex items-center justify-center`}
-              title={isAllExpanded ? "Close All Nodes" : "Expand All Nodes"}
-              style={{ width: "36px", height: "36px" }}
-            >
-              {isAllExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
+          <ProtocolFilter
+            selectedProtocols={selectedProtocols}
+            onProtocolsChange={setSelectedProtocols}
+            selectedIncome={selectedIncome}
+            onIncomeChange={setSelectedIncome}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            isActive={isFilterActive}
+            onToggleFilter={handleToggleFilter}
+            isCollapsed={networkState.isZoomedIn || infoNode ? true : isFilterCollapsed}
+            onToggleCollapsed={networkState.isZoomedIn || infoNode ? () => {} : setIsFilterCollapsed}
+            isControlsCollapsed={networkState.isZoomedIn || infoNode ? true : isControlsCollapsed}
+          />
 
-            {/* Reset Layout Button - Icon only */}
-            <button
-              onClick={handleResetLayout}
-              className={`absolute top-4 ${buttonPositions.reset} p-2 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded hover:bg-blue-500/30 transition-all duration-200 font-medium text-xs flex items-center justify-center`}
-              title="Reset Node Positions"
-              style={{ width: "36px", height: "36px" }}
-            >
-              <RotateCcw size={16} />
-            </button>
+          <button
+            onClick={handleExpandAll}
+            className={`absolute top-4 ${buttonPositions.expandAll} p-2 bg-amber-500/20 border border-amber-500/50 text-amber-300 rounded hover:bg-amber-500/30 transition-all duration-200 font-medium text-xs flex items-center justify-center`}
+            title={isAllExpanded ? "Close All Nodes" : "Expand All Nodes"}
+            style={{ width: "36px", height: "36px" }}
+          >
+            {isAllExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
 
-            {/* Rotate Button */}
-            <button
-              onClick={() => setIsRotateMode(!isRotateMode)}
-              className={`absolute top-4 ${buttonPositions.rotate} p-2 ${
-                isRotateMode
-                  ? "bg-green-500/30 border-green-500/50 text-green-300"
-                  : "bg-gray-500/20 border-gray-500/50 text-gray-300"
-              } rounded hover:bg-opacity-40 transition-all duration-200 font-medium text-xs`}
-              title={isRotateMode ? "Disable Rotate Mode" : "Enable Rotate Mode"}
-              style={{ width: "60px", height: "36px" }}
-            >
-              Rotate
-            </button>
+          <button
+            onClick={handleResetLayout}
+            className={`absolute top-4 ${buttonPositions.reset} p-2 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded hover:bg-blue-500/30 transition-all duration-200 font-medium text-xs flex items-center justify-center`}
+            title="Reset Node Positions"
+            style={{ width: "36px", height: "36px" }}
+          >
+            <RotateCcw size={16} />
+          </button>
 
-            {/* Info Button */}
-            <button
-              onClick={() => {
-                if (!isInfoMode) {
-                  // Activating info mode - check if panels are already open
-                  const panelAlreadyOpen = networkState.isZoomedIn || infoNode
-                  if (!panelAlreadyOpen) {
-                    setIsInfoMode(true)
-                  } else {
-                    // Panel already open, just activate info mode without opening new panel
-                    setIsInfoMode(true)
-                  }
-                } else {
-                  // Deactivating info mode - close all panels
-                  setIsInfoMode(false)
-                  setInfoNodeId(null)
-                  // Also close details panel if open
-                  if (networkState.isZoomedIn) {
-                    handleOverviewClick()
-                  }
-                }
-              }}
-              className={`absolute top-4 ${buttonPositions.info} p-2 ${
-                isInfoMode
-                  ? "bg-purple-500/30 border-purple-500/50 text-purple-300"
-                  : "bg-gray-500/20 border-gray-500/50 text-gray-300"
-              } rounded hover:bg-opacity-40 transition-all duration-200 font-medium text-xs flex items-center justify-center gap-2`}
-              title={isInfoMode ? "Disable Info Mode" : "Enable Info Mode"}
-              style={{ width: "60px", height: "36px" }}
-            >
-              <Info size={14} />
-              Info
-            </button>
+          <button
+            onClick={() => setIsRotateMode(!isRotateMode)}
+            className={`absolute top-4 ${buttonPositions.rotate} p-2 ${
+              isRotateMode
+                ? "bg-green-500/30 border-green-500/50 text-green-300"
+                : "bg-gray-500/20 border-gray-500/50 text-gray-300"
+            } rounded hover:bg-opacity-40 transition-all duration-200 font-medium text-xs`}
+            title={isRotateMode ? "Disable Rotate Mode" : "Enable Rotate Mode"}
+            style={{ width: "60px", height: "36px" }}
+          >
+            Rotate
+          </button>
 
-            {/* WW METROPOLIS Title - Centered or minimum spacing from Info button */}
-            <div
-              className="absolute top-4 flex items-center justify-center text-amber-500 font-bold tracking-wider"
-              style={{ 
-                height: "36px", 
-                fontSize: "36px", 
-                lineHeight: "36px",
-                left: getTitlePosition()
-              }}
-            >
-              WW METROPOLIS
-            </div>
-          </>
-          
+          <button
+            onClick={() => {
+              if (!isInfoMode) {
+                setIsInfoMode(true)
+              } else {
+                setIsInfoMode(false)
+                setInfoNodeId(null)
+              }
+            }}
+            className={`absolute top-4 ${buttonPositions.info} p-2 ${
+              isInfoMode
+                ? "bg-purple-500/30 border-purple-500/50 text-purple-300"
+                : "bg-gray-500/20 border-gray-500/50 text-gray-300"
+            } rounded hover:bg-opacity-40 transition-all duration-200 font-medium text-xs flex items-center justify-center gap-2`}
+            title={isInfoMode ? "Disable Info Mode" : "Enable Info Mode"}
+            style={{ width: "60px", height: "36px" }}
+          >
+            <Info size={14} />
+            Info
+          </button>
+
+          <div
+            className="absolute top-4 flex items-center justify-center text-amber-500 font-bold tracking-wider"
+            style={{
+              height: "36px",
+              fontSize: "36px",
+              lineHeight: "36px",
+              left: getTitlePosition(),
+            }}
+          >
+            WW METROPOLIS
+          </div>
+
           {networkState.isZoomedIn && (
             <div className="absolute top-15 left-4 right-4 z-10">
               <BreadcrumbNavigation
@@ -811,7 +613,8 @@ export default function NodeNetworkApp() {
             </div>
           )}
         </div>
-        {networkState.isZoomedIn && detailsNode && (
+
+        {networkState.isZoomedIn && detailsNode && !infoNode && (
           <div className="w-2/5">
             <DescriptionPanel node={detailsNode} onClose={handleOverviewClick} />
           </div>
@@ -822,13 +625,8 @@ export default function NodeNetworkApp() {
           </div>
         )}
       </div>
-      {/* Ensure target stays at hub */}
-      {useEffect(() => {
-        if (orbitControlsRef.current) {
-          orbitControlsRef.current.target.set(0, 0, 0)
-          orbitControlsRef.current.update()
-        }
-      }, [networkState, isAllExpanded])}
     </div>
   )
 }
+
+export default NodeNetworkApp

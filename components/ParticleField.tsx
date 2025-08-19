@@ -2,24 +2,21 @@
 
 import { useRef } from "react"
 import { useFrame } from "@react-three/fiber"
-import type * as THREE from "three"
+import * as THREE from "three"
 
 export function ParticleField() {
   const particlesRef = useRef<THREE.Points>(null)
   const particleCount = 200
   const positions = new Float32Array(particleCount * 3)
 
-  // Define distance constraints to keep particles far from camera and nodes
-  const minDistance = 15 // Minimum distance from origin
-  const maxDistance = 35 // Maximum distance from origin
+  const minDistance = 15
+  const maxDistance = 35
 
   for (let i = 0; i < particleCount; i++) {
-    // Generate random spherical coordinates
-    const theta = Math.random() * Math.PI * 2 // Azimuth angle
-    const phi = Math.acos(2 * Math.random() - 1) // Polar angle (uniform distribution on sphere)
-    const radius = minDistance + Math.random() * (maxDistance - minDistance) // Distance from origin
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    const radius = minDistance + Math.random() * (maxDistance - minDistance)
 
-    // Convert spherical to cartesian coordinates
     const x = radius * Math.sin(phi) * Math.cos(theta)
     const y = radius * Math.sin(phi) * Math.sin(theta)
     const z = radius * Math.cos(phi)
@@ -42,9 +39,9 @@ export function ParticleField() {
       </bufferGeometry>
       <pointsMaterial 
         color="#FFD700" 
-        size={0.1} // Increased back to 0.1 as requested
+        size={0.1}
         transparent 
-        opacity={0.5} // Reduced opacity for more subtle background effect
+        opacity={0.5}
         sizeAttenuation 
       />
     </points>

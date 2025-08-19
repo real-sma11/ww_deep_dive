@@ -428,6 +428,9 @@ export function repositionNodesWithCollisionDetection(
   centerNode: Node3D,
   existingPositions: Position3D[] = [],
 ): void {
+  // CRITICAL: Store the original center position and NEVER allow it to change
+  const originalCenterPosition = { ...centerNode.position }
+  
   const allPositions = [...existingPositions, centerNode.position]
   const allLines: Array<{ start: Position3D; end: Position3D; startNodeId: string; endNodeId: string }> = []
   const centerPos = centerNode.position
@@ -485,4 +488,8 @@ export function repositionNodesWithCollisionDetection(
   nodes.forEach((node) => {
     repositionNodeAndChildren(node, centerNode.position, 0, centerNode.id)
   })
+
+  // CRITICAL: Force center node back to original position after any repositioning
+  centerNode.position = originalCenterPosition
+  console.log("Collision detection completed - center node position preserved:", centerNode.position)
 }

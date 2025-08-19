@@ -1,6 +1,6 @@
 "use client"
 
-import { Settings } from 'lucide-react'
+import { Settings } from "lucide-react"
 import { Card } from "@/components/ui/card"
 
 interface InstructionsPanelProps {
@@ -41,7 +41,10 @@ export function InstructionsPanel({ isCollapsed, onToggleCollapsed, isFilterColl
   }
 
   return (
-    <Card className={`absolute ${getPosition()} p-3 bg-black/70 text-white border-amber-500/50 w-72`} style={{ height: "280px" }}>
+    <Card
+      className={`absolute ${getPosition()} p-3 bg-black/70 text-white border-amber-500/50 w-72`}
+      style={{ height: "280px" }}
+    >
       <div className="flex items-center mb-2">
         <h3 className="font-bold text-sm">3D Node Network Controls</h3>
         <button
@@ -61,6 +64,7 @@ export function InstructionsPanel({ isCollapsed, onToggleCollapsed, isFilterColl
         <li>• **Rotate Mode**: Click "Rotate" button for left-click rotation</li>
         <li>• **Click**: Expand/collapse node connections</li>
         <li>• **Double-click**: Focus on node with details</li>
+        <li>• **Info Mode**: Click "Info" then click nodes to view details</li>
       </ul>
     </Card>
   )

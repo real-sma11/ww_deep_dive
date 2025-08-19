@@ -16,21 +16,16 @@ export function AnimatedConnectionLine({ start, end, color, visible = true }: An
   const lineRef = useRef<THREE.Line>(null)
   const [opacity, setOpacity] = useState(visible ? 0.6 : 0)
 
-  // CRITICAL FIX: This effect runs whenever start or end points change,
-  // forcing the line's geometry to update.
   useLayoutEffect(() => {
     if (lineRef.current) {
       const geometry = lineRef.current.geometry as THREE.BufferGeometry
       const positions = geometry.attributes.position as THREE.BufferAttribute
-      // Update the two points of the line
       positions.setXYZ(0, start.x, start.y, start.z)
       positions.setXYZ(1, end.x, end.y, end.z)
-      // Tell Three.js that the positions have been updated
       positions.needsUpdate = true
     }
-  }, [start, end]) // Dependency array ensures this runs only when positions change
+  }, [start, end])
 
-  // This effect handles the smooth fade-in/fade-out animation.
   useFrame((state, delta) => {
     const targetOpacity = visible ? 0.6 : 0
     if (Math.abs(opacity - targetOpacity) > 0.01) {
@@ -43,7 +38,6 @@ export function AnimatedConnectionLine({ start, end, color, visible = true }: An
     }
   })
 
-  // The geometry is now just a template. The useLayoutEffect will keep it in sync.
   return (
     <line ref={lineRef}>
       <bufferGeometry>
